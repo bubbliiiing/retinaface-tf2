@@ -14,8 +14,7 @@
 如果想要使用基于resnet50的retinaface请下载retinaface_resnet50.h5进行预测。  
 
 ### 所需环境
-tensorflow-gpu==1.13.1  
-keras==2.1.5  
+tensorflow-gpu==2.2.0
 
 ### 文件下载
 训练所需的retinaface_resnet50.h5、resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5等文件可以在百度云下载。    
