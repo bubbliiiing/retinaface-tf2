@@ -20,8 +20,8 @@ keras==2.1.5
 ### 文件下载
 训练所需的retinaface_resnet50.h5、resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5等文件可以在百度云下载。    
 数据集也可以在如下连接里下载。    
-链接: https://pan.baidu.com/s/1uZXsejs6S3PFeMzMnQBPzA   
-提取码: pxmv  
+链接: https://pan.baidu.com/s/1moS6X6olCxUwd4V7JJOgHw   
+提取码: pwfs   
 
 ### 预测步骤
 #### 1、使用预训练权重
