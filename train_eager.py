@@ -42,7 +42,7 @@ def fit_one_epoch(net, optimizer, epoch, epoch_size, gen, Epoch, train_step):
 
             waste_time = time.time() - start_time
             
-            pbar.set_postfix(**{'total_loss': total_loss/(iteration+1) / (iteration + 1), 
+            pbar.set_postfix(**{'total_loss': total_loss.numpy()/(iteration+1), 
                                 'lr'        : optimizer._decayed_lr(tf.float32).numpy(),
                                 'step/s'    : waste_time})
             pbar.update(1)
