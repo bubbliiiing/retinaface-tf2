@@ -56,37 +56,31 @@ def conf_loss(neg_pos_ratio = 7,negatives_for_hard = 100):
         has_min = tf.cast(tf.reduce_any(pos_num_neg_mask), tf.float32)
         num_neg = tf.concat([num_neg,[(1 - has_min) * negatives_for_hard]], axis=0)
 
-        #------------------------------------#
-        #   求平均每个图片要取多少个负样本
-        #------------------------------------#
-        num_neg_batch = tf.reduce_mean(tf.boolean_mask(num_neg, tf.greater(num_neg, 0)))
+        # --------------------------------------------- #
+        #   求整个batch应该的负样本数量总和
+        # --------------------------------------------- #
+        num_neg_batch = tf.reduce_sum(tf.boolean_mask(num_neg, tf.greater(num_neg, 0)))
         num_neg_batch = tf.cast(num_neg_batch, tf.int32)
 
-        max_confs = y_pred[:, :, 1]
-        #------------------------------------#
-        #   取top_k个置信度，作为负样本
-        #------------------------------------#
-        x, indices = tf.nn.top_k(max_confs * (1 - y_true[:, :, -1]),
-                                 k=num_neg_batch)
+        # --------------------------------------------- #
+        #   把不是背景的概率求和，求和后的概率越大
+        #   代表越难分类。
+        # --------------------------------------------- #
+        max_confs = tf.reduce_sum(y_pred[:, :, 1:], axis=2)
+        # --------------------------------------------------- #
+        #   只有没有包含物体的先验框才得到保留
+        #   我们在整个batch里面选取最难分类的num_neg_batch个
+        #   先验框作为负样本。
+        # --------------------------------------------------- #
+        max_confs = tf.reshape(max_confs * (1 - y_true[:, :, -1]), [-1])
+        _, indices = tf.nn.top_k(max_confs, k=num_neg_batch)
 
-        #------------------------------------#
-        #   找到其在1维上的索引
-        #------------------------------------#
-        batch_idx = tf.expand_dims(tf.range(0, batch_size), 1)
-        batch_idx = tf.tile(batch_idx, (1, num_neg_batch))
-        full_indices = (tf.reshape(batch_idx, [-1]) * tf.cast(num_boxes, tf.int32) + tf.reshape(indices, [-1]))
+        neg_conf_loss = tf.gather(tf.reshape(cls_loss, [-1]), indices)
 
-        #------------------------------------#
-        #   计算分类损失并且归一化
-        #------------------------------------#
-        neg_conf_loss = tf.gather(tf.reshape(cls_loss, [-1]), full_indices)
-        neg_conf_loss = tf.reshape(neg_conf_loss, [batch_size, num_neg_batch])
-        neg_conf_loss = tf.reduce_sum(neg_conf_loss, axis=1)
-
-        num_pos = tf.where(tf.not_equal(num_pos, 0), num_pos, tf.ones_like(num_pos))
-        total_loss = tf.reduce_sum(pos_conf_loss) + tf.reduce_sum(neg_conf_loss)
+        # 进行归一化
+        num_pos     = tf.where(tf.not_equal(num_pos, 0), num_pos, tf.ones_like(num_pos))
+        total_loss  = tf.reduce_sum(pos_conf_loss) + tf.reduce_sum(neg_conf_loss)
         total_loss /= tf.reduce_sum(num_pos)
-
         return total_loss
     return _conf_loss
     
