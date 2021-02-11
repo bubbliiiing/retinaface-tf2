@@ -4,17 +4,16 @@
 from __future__ import print_function
 
 import numpy as np
-from tensorflow.keras import layers
-
-from tensorflow.keras.layers import Input
-from tensorflow.keras.layers import Dense,Conv2D,MaxPooling2D,ZeroPadding2D,AveragePooling2D
-from tensorflow.keras.layers import Activation,BatchNormalization,Flatten
-from tensorflow.keras.models import Model
-
-from tensorflow.keras.preprocessing import image
 import tensorflow.keras.backend as K
-from tensorflow.keras.applications.imagenet_utils import decode_predictions
-from tensorflow.keras.applications.imagenet_utils import preprocess_input
+from tensorflow.keras import layers
+from tensorflow.keras.applications.imagenet_utils import (decode_predictions,
+                                                          preprocess_input)
+from tensorflow.keras.layers import (Activation, AveragePooling2D,
+                                     BatchNormalization, Conv2D, Dense,
+                                     Flatten, Input, MaxPooling2D,
+                                     ZeroPadding2D)
+from tensorflow.keras.models import Model
+from tensorflow.keras.preprocessing import image
 
 
 def identity_block(input_tensor, kernel_size, filters, stage, block):

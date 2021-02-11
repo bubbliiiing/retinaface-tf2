@@ -1,17 +1,21 @@
-import numpy as np
-from tensorflow import keras
-from tensorflow.keras.optimizers import Adam
-from nets.retinaface import RetinaFace
-from nets.retinanet_training import Generator
-from nets.retinanet_training import conf_loss, box_smooth_l1, ldm_smooth_l1
-from tensorflow.keras.callbacks import TensorBoard, ReduceLROnPlateau, EarlyStopping
-from utils.utils import BBoxUtility
-from utils.anchors import Anchors
-from utils.config import cfg_re50, cfg_mnet
-from functools import partial
-from tqdm import tqdm
-import tensorflow as tf
 import time
+from functools import partial
+
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.callbacks import (EarlyStopping, ReduceLROnPlateau,
+                                        TensorBoard)
+from tensorflow.keras.optimizers import Adam
+from tqdm import tqdm
+
+from nets.retinaface import RetinaFace
+from nets.retinanet_training import (Generator, box_smooth_l1, conf_loss,
+                                     ldm_smooth_l1)
+from utils.anchors import Anchors
+from utils.config import cfg_mnet, cfg_re50
+from utils.utils import BBoxUtility
+
 
 # 防止bug
 def get_train_step_fn():
@@ -31,7 +35,6 @@ def get_train_step_fn():
 
 def fit_one_epoch(net, optimizer, epoch, epoch_size, gen, Epoch, train_step):
     total_loss = 0
-    start_time = time.time()
     with tqdm(total=epoch_size,desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3) as pbar:
         for iteration, batch in enumerate(gen):
             if iteration>=epoch_size:
@@ -40,15 +43,9 @@ def fit_one_epoch(net, optimizer, epoch, epoch_size, gen, Epoch, train_step):
             loss_value = train_step(images, targets1, targets2, targets3, net, optimizer)
             total_loss += loss_value
 
-            waste_time = time.time() - start_time
-            
             pbar.set_postfix(**{'total_loss': total_loss.numpy()/(iteration+1), 
-                                'lr'        : optimizer._decayed_lr(tf.float32).numpy(),
-                                'step/s'    : waste_time})
+                                'lr'        : optimizer._decayed_lr(tf.float32).numpy()})
             pbar.update(1)
-
-            start_time = time.time()
-            
 
         print('Finish Validation')
         print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
@@ -61,12 +58,15 @@ for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 
 if __name__ == "__main__":
+    #--------------------------------#
+    #   获得训练用的人脸标签与坐标
+    #--------------------------------#
+    training_dataset_path = './data/widerface/train/label.txt'
     #-------------------------------#
     #   主干特征提取网络的选择
     #   mobilenet或者resnet50
     #-------------------------------#
     backbone = "mobilenet"
-    training_dataset_path = './data/widerface/train/label.txt'
 
     if backbone == "mobilenet":
         cfg = cfg_mnet
@@ -77,11 +77,11 @@ if __name__ == "__main__":
     else:
         raise ValueError('Unsupported backbone - `{}`, Use mobilenet, resnet50.'.format(backbone))
 
-    img_dim = cfg['image_size']
-
-    #-------------------------------#
-    #   创立模型
-    #-------------------------------#
+    img_dim = cfg['train_image_size']
+    #--------------------------------------#
+    #   载入模型与权值
+    #   请注意主干网络与预训练权重的对应
+    #--------------------------------------#
     model = RetinaFace(cfg, backbone=backbone)
     model_path = "model_data/retinaface_mobilenet025.h5"
     model.load_weights(model_path,by_name=True,skip_mismatch=True)
@@ -96,24 +96,21 @@ if __name__ == "__main__":
     anchors = Anchors(cfg, image_size=(img_dim, img_dim)).get_anchors()
     bbox_util = BBoxUtility(anchors)
 
+    for i in range(freeze_layers): model.layers[i].trainable = False
+    print('Freeze the first {} layers of total {} layers.'.format(freeze_layers, len(model.layers)))
+
     #------------------------------------------------------#
     #   主干特征提取网络特征通用，冻结训练可以加快训练速度
     #   也可以在训练初期防止权值被破坏。
     #   Init_Epoch为起始世代
     #   Freeze_Epoch为冻结训练的世代
     #   Epoch总训练世代
+    #   提示OOM或者显存不足请调小Batch_size
     #------------------------------------------------------#
-    for i in range(freeze_layers): model.layers[i].trainable = False
-    print('Freeze the first {} layers of total {} layers.'.format(freeze_layers, len(model.layers)))
     if True:
-        #--------------------------------------------#
-        #   BATCH_SIZE不要太小，不然训练效果很差
-        #--------------------------------------------#
+        batch_size = 8
         Init_epoch = 0
         Freeze_epoch = 50
-        # batch_size大小，每次喂入多少数据
-        batch_size = 8
-        # 最大学习率
         learning_rate_base = 1e-3
 
         gen = Generator(training_dataset_path,img_dim,batch_size,bbox_util)
@@ -144,14 +141,9 @@ if __name__ == "__main__":
         model.layers[i].trainable = True
 
     if True:
-        #--------------------------------------------#
-        #   BATCH_SIZE不要太小，不然训练效果很差
-        #--------------------------------------------#
+        batch_size = 4
         Freeze_epoch = 50
         Epoch = 100
-        # batch_size大小，每次喂入多少数据
-        batch_size = 4
-        # 最大学习率
         learning_rate_base = 1e-4
 
         gen = Generator(training_dataset_path,img_dim,batch_size,bbox_util)
@@ -169,7 +161,7 @@ if __name__ == "__main__":
         lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
             initial_learning_rate=learning_rate_base,
             decay_steps=epoch_size,
-            decay_rate=0.95,
+            decay_rate=0.92,
             staircase=True
         )
 

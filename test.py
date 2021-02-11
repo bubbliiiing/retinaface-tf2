@@ -1,3 +1,6 @@
+#--------------------------------------------#
+#   该部分代码只用于看网络结构，并非测试代码
+#--------------------------------------------#
 from nets.retinaface import RetinaFace
 from utils.config import cfg_mnet, cfg_re50
 

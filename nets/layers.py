@@ -1,7 +1,8 @@
 
-from tensorflow import keras
 import numpy as np
+from tensorflow import keras
 from utils import backend
+
 
 class UpsampleLike(keras.layers.Layer):
     def call(self, inputs, **kwargs):

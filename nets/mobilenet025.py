@@ -1,9 +1,17 @@
 import warnings
-import numpy as np
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import DepthwiseConv2D,Input,Activation,Dropout,Reshape,BatchNormalization,GlobalAveragePooling2D,GlobalMaxPooling2D,Conv2D
-from tensorflow.keras import backend as K
 
+import numpy as np
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
+                                     DepthwiseConv2D, Dropout,
+                                     GlobalAveragePooling2D,
+                                     GlobalMaxPooling2D, Input, Reshape)
+from tensorflow.keras.models import Model
+
+
+#----------------------------------#
+#   普通的卷积块
+#----------------------------------#
 def _conv_block(inputs, filters, kernel=(3, 3), strides=(1, 1)):
     x = Conv2D(filters, kernel,
                padding='same',
@@ -13,7 +21,9 @@ def _conv_block(inputs, filters, kernel=(3, 3), strides=(1, 1)):
     x = BatchNormalization(name='conv1_bn')(x)
     return Activation(relu6, name='conv1_relu')(x)
 
-
+#----------------------------------#
+#   深度可分离卷积块
+#----------------------------------#
 def _depthwise_conv_block(inputs, pointwise_conv_filters,
                           depth_multiplier=1, strides=(1, 1), block_id=1):
 

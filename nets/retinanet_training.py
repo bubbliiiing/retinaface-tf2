@@ -1,14 +1,16 @@
 
-from tensorflow.keras.applications.imagenet_utils import preprocess_input
-from tensorflow.keras import backend as K
-import tensorflow.keras
-import tensorflow as tf
-import numpy as np
 from random import shuffle
-from utils import backend
-from PIL import Image
-from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
+
 import cv2
+import numpy as np
+import tensorflow as tf
+import tensorflow.keras
+from matplotlib.colors import hsv_to_rgb, rgb_to_hsv
+from PIL import Image
+from tensorflow.keras import backend as K
+from tensorflow.keras.applications.imagenet_utils import preprocess_input
+from utils import backend
+
 
 def softmax_loss(y_true, y_pred):
     y_pred = tf.maximum(y_pred, 1e-7)
@@ -18,58 +20,73 @@ def softmax_loss(y_true, y_pred):
 
 def conf_loss(neg_pos_ratio = 7,negatives_for_hard = 100):
     def _conf_loss(y_true, y_pred):
+        #-------------------------------#
+        #   取出batch_size
+        #-------------------------------#
         batch_size = tf.shape(y_true)[0]
+        #-------------------------------#
+        #   取出先验框的数量
+        #-------------------------------#
         num_boxes = tf.cast((tf.shape(y_true)[1]),tf.float32)
         
         labels         = y_true[:, :, :-1]
         classification = y_pred
-
+        #-------------------------------#
+        #   计算所有先验框的损失cls_loss
+        #-------------------------------#
         cls_loss = softmax_loss(labels, classification)
         
+        #-------------------------------#
+        #   获取作为正样本的先验框与损失
+        #-------------------------------#
         num_pos = tf.reduce_sum(y_true[:, :, -1], axis=-1)
-        
         pos_conf_loss = tf.reduce_sum(cls_loss * y_true[:, :, -1],
                                       axis=1)
-        # 获取一定的负样本
+        #-------------------------------#
+        #   获取一定的负样本
+        #-------------------------------#
         num_neg = tf.minimum(neg_pos_ratio * num_pos,
                              num_boxes - num_pos)
 
 
-        # 找到了哪些值是大于0的
+        #-------------------------------#
+        #   找到了哪些值是大于0的
+        #-------------------------------#
         pos_num_neg_mask = tf.greater(num_neg, 0)
-        # 获得一个1.0
         has_min = tf.cast(tf.reduce_any(pos_num_neg_mask), tf.float32)
         num_neg = tf.concat([num_neg,[(1 - has_min) * negatives_for_hard]], axis=0)
 
-        # 求平均每个图片要取多少个负样本
-        num_neg_batch = tf.reduce_mean(tf.boolean_mask(num_neg,
-                                                      tf.greater(num_neg, 0)))
+        #------------------------------------#
+        #   求平均每个图片要取多少个负样本
+        #------------------------------------#
+        num_neg_batch = tf.reduce_mean(tf.boolean_mask(num_neg, tf.greater(num_neg, 0)))
         num_neg_batch = tf.cast(num_neg_batch, tf.int32)
 
         max_confs = y_pred[:, :, 1]
-
-        # 取top_k个置信度，作为负样本
+        #------------------------------------#
+        #   取top_k个置信度，作为负样本
+        #------------------------------------#
         x, indices = tf.nn.top_k(max_confs * (1 - y_true[:, :, -1]),
                                  k=num_neg_batch)
 
-        # 找到其在1维上的索引
+        #------------------------------------#
+        #   找到其在1维上的索引
+        #------------------------------------#
         batch_idx = tf.expand_dims(tf.range(0, batch_size), 1)
         batch_idx = tf.tile(batch_idx, (1, num_neg_batch))
-        full_indices = (tf.reshape(batch_idx, [-1]) * tf.cast(num_boxes, tf.int32) +
-                        tf.reshape(indices, [-1]))
+        full_indices = (tf.reshape(batch_idx, [-1]) * tf.cast(num_boxes, tf.int32) + tf.reshape(indices, [-1]))
 
-        neg_conf_loss = tf.gather(tf.reshape(cls_loss, [-1]),
-                                  full_indices)
-        neg_conf_loss = tf.reshape(neg_conf_loss,
-                                   [batch_size, num_neg_batch])
+        #------------------------------------#
+        #   计算分类损失并且归一化
+        #------------------------------------#
+        neg_conf_loss = tf.gather(tf.reshape(cls_loss, [-1]), full_indices)
+        neg_conf_loss = tf.reshape(neg_conf_loss, [batch_size, num_neg_batch])
         neg_conf_loss = tf.reduce_sum(neg_conf_loss, axis=1)
 
-
-        num_pos = tf.where(tf.not_equal(num_pos, 0), num_pos,
-                            tf.ones_like(num_pos))
+        num_pos = tf.where(tf.not_equal(num_pos, 0), num_pos, tf.ones_like(num_pos))
         total_loss = tf.reduce_sum(pos_conf_loss) + tf.reduce_sum(neg_conf_loss)
         total_loss /= tf.reduce_sum(num_pos)
-        # total_loss = tf.Print(total_loss,[labels,full_indices,tf.reduce_sum(pos_conf_loss)/tf.reduce_sum(num_pos),tf.reduce_sum(neg_conf_loss)/tf.reduce_sum(num_pos),tf.reduce_sum(num_pos)])
+
         return total_loss
     return _conf_loss
     
@@ -81,14 +98,16 @@ def box_smooth_l1(sigma=1):
         regression_target = y_true[:, :, :-1]
         anchor_state      = y_true[:, :, -1]
 
-        # 找到正样本
+        #------------------------------------#
+        #   取出作为正样本的先验框
+        #------------------------------------#
         indices           = tf.where(tensorflow.keras.backend.equal(anchor_state, 1))
         regression        = tf.gather_nd(regression, indices)
         regression_target = tf.gather_nd(regression_target, indices)
 
-        # 计算 smooth L1 loss
-        # f(x) = 0.5 * (sigma * x)^2          if |x| < 1 / sigma / sigma
-        #        |x| - 0.5 / sigma / sigma    otherwise
+        #------------------------------------#
+        #   计算 smooth L1 loss
+        #------------------------------------#
         regression_diff = regression - regression_target
         regression_diff = tensorflow.keras.backend.abs(regression_diff)
         regression_loss = backend.where(
@@ -147,7 +166,7 @@ def get_random_data(image, targes, input_shape, random=True, jitter=.3, hue=.1, 
 
     # 对图像进行缩放并且进行长和宽的扭曲
     new_ar = w/h * rand(1-jitter,1+jitter)/rand(1-jitter,1+jitter)
-    scale = rand(0.5,1.5)
+    scale = rand(0.25, 2)
     if new_ar < 1:
         nh = int(scale*h)
         nw = int(nh*new_ar)
@@ -240,28 +259,39 @@ class Generator(object):
     
     def generate(self, eager=True):
         while True:
+            #-----------------------------------#
+            #   对训练集进行打乱
+            #-----------------------------------#
             shuffle_index = np.arange(len(self.imgs_path))
             shuffle(shuffle_index)
             self.imgs_path = np.array(self.imgs_path)[shuffle_index]
             self.words = np.array(self.words)[shuffle_index]
+
             inputs = []
             target0 = []
             target1 = []
             target2 = []
             for i, image_path in enumerate(self.imgs_path):  
+                #-----------------------------------#
+                #   打开图像，获取对应的标签
+                #-----------------------------------#
                 img = Image.open(image_path)
                 labels = self.words[i]
                 annotations = np.zeros((0, 15))
 
                 for idx, label in enumerate(labels):
                     annotation = np.zeros((1, 15))
-                    # bbox
+                    #-----------------------------------#
+                    #   bbox 真实框的位置
+                    #-----------------------------------#
                     annotation[0, 0] = label[0]  # x1
                     annotation[0, 1] = label[1]  # y1
                     annotation[0, 2] = label[0] + label[2]  # x2
                     annotation[0, 3] = label[1] + label[3]  # y2
 
-                    # landmarks
+                    #-----------------------------------#
+                    #   landmarks 人脸关键点的位置
+                    #-----------------------------------#
                     annotation[0, 4] = label[4]    # l0_x
                     annotation[0, 5] = label[5]    # l0_y
                     annotation[0, 6] = label[7]    # l1_x
