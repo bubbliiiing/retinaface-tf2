@@ -90,7 +90,7 @@ def conf_loss(neg_pos_ratio = 7,negatives_for_hard = 100):
         return total_loss
     return _conf_loss
     
-def box_smooth_l1(sigma=1):
+def box_smooth_l1(sigma=1, weights=1):
     sigma_squared = sigma ** 2
 
     def _smooth_l1(y_true, y_pred):
@@ -120,7 +120,7 @@ def box_smooth_l1(sigma=1):
         normalizer = tensorflow.keras.backend.cast(normalizer, dtype=tensorflow.keras.backend.floatx())
         loss = tensorflow.keras.backend.sum(regression_loss) / normalizer
 
-        return loss
+        return loss * weights
 
     return _smooth_l1
 

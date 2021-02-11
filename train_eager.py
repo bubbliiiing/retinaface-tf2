@@ -24,7 +24,7 @@ def get_train_step_fn():
         with tf.GradientTape() as tape:
             # 计算loss
             prediction = net(imgs, training=True)
-            loss_value1 = box_smooth_l1()(targets1, prediction[0])
+            loss_value1 = box_smooth_l1(weights=cfg['loc_weight'])(targets1, prediction[0])
             loss_value2 = conf_loss()(targets2, prediction[1])
             loss_value3 = ldm_smooth_l1()(targets3, prediction[2])
             loss_value = loss_value1 + loss_value2 + loss_value3

@@ -84,7 +84,7 @@ if __name__ == "__main__":
         gen = Generator(training_dataset_path,img_dim,batch_size,bbox_util)
 
         model.compile(loss={
-                    'bbox_reg'  : box_smooth_l1(),
+                    'bbox_reg'  : box_smooth_l1(weights=cfg['loc_weight']),
                     'cls'       : conf_loss(),
                     'ldm_reg'   : ldm_smooth_l1()
                 },optimizer=keras.optimizers.Adam(lr=learning_rate_base)
@@ -108,7 +108,7 @@ if __name__ == "__main__":
         gen = Generator(training_dataset_path,img_dim,batch_size,bbox_util)
         
         model.compile(loss={
-                    'bbox_reg'  : box_smooth_l1(),
+                    'bbox_reg'  : box_smooth_l1(weights=cfg['loc_weight']),
                     'cls'       : conf_loss(),
                     'ldm_reg'   : ldm_smooth_l1()
                 },optimizer=keras.optimizers.Adam(lr=learning_rate_base)
