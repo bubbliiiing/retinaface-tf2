@@ -160,7 +160,7 @@ def get_random_data(image, targes, input_shape, random=True, jitter=.3, hue=.1, 
 
     # 对图像进行缩放并且进行长和宽的扭曲
     new_ar = w/h * rand(1-jitter,1+jitter)/rand(1-jitter,1+jitter)
-    scale = rand(0.25, 2)
+    scale = rand(0.25, 2.5)
     if new_ar < 1:
         nh = int(scale*h)
         nw = int(nh*new_ar)
