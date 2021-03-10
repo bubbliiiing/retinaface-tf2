@@ -1,4 +1,5 @@
-
+import math
+import random
 from random import shuffle
 
 import cv2
@@ -7,6 +8,7 @@ import tensorflow as tf
 import tensorflow.keras
 from matplotlib.colors import hsv_to_rgb, rgb_to_hsv
 from PIL import Image
+from tensorflow import keras
 from tensorflow.keras import backend as K
 from tensorflow.keras.applications.imagenet_utils import preprocess_input
 from utils import backend
@@ -153,14 +155,15 @@ def ldm_smooth_l1(sigma=1):
 def rand(a=0, b=1):
     return np.random.rand()*(b-a) + a
 
-def get_random_data(image, targes, input_shape, random=True, jitter=.3, hue=.1, sat=1.5, val=1.5):
+def get_random_data(image, targes, input_shape, jitter=.3, hue=.1, sat=1.5, val=1.5):
     iw, ih = image.size
     h, w = input_shape
     box = targes
 
     # 对图像进行缩放并且进行长和宽的扭曲
     new_ar = w/h * rand(1-jitter,1+jitter)/rand(1-jitter,1+jitter)
-    scale = rand(0.25, 2.5)
+    PRE_SCALES = [3.33, 2.22, 1.67, 1.25, 1.0]
+    scale = random.choice(PRE_SCALES)
     if new_ar < 1:
         nh = int(scale*h)
         nw = int(nh*new_ar)
@@ -199,7 +202,15 @@ def get_random_data(image, targes, input_shape, random=True, jitter=.3, hue=.1, 
         np.random.shuffle(box)
         box[:, [0,2,4,6,8,10,12]] = box[:, [0,2,4,6,8,10,12]]*nw/iw + dx
         box[:, [1,3,5,7,9,11,13]] = box[:, [1,3,5,7,9,11,13]]*nh/ih + dy
-        if flip: box[:, [0,2,4,6,8,10,12]] = w - box[:, [2,0,6,4,8,12,10]]
+        if flip: 
+            box[:, [0,2,4,6,8,10,12]] = w - box[:, [2,0,6,4,8,12,10]]
+            box[:, [5,7,9,11,13]]     = box[:, [7,5,9,13,11]]
+        
+        center_x = (box[:, 0] + box[:, 2])/2
+        center_y = (box[:, 1] + box[:, 3])/2
+    
+        box = box[np.logical_and(np.logical_and(center_x>0, center_y>0), np.logical_and(center_x<w, center_y<h))]
+
         box[:, 0:14][box[:, 0:14]<0] = 0
         box[:, [0,2,4,6,8,10,12]][box[:, [0,2,4,6,8,10,12]]>w] = w
         box[:, [1,3,5,7,9,11,13]][box[:, [1,3,5,7,9,11,13]]>h] = h
@@ -207,14 +218,14 @@ def get_random_data(image, targes, input_shape, random=True, jitter=.3, hue=.1, 
         box_w = box[:, 2] - box[:, 0]
         box_h = box[:, 3] - box[:, 1]
         box = box[np.logical_and(box_w>1, box_h>1)] # discard invalid box
-        box_data = box
 
-    box[:,4:-1][box[:,-1]==-1]=0
+    box[:, 4:-1][box[:,-1]==-1]=0
     box[:, [0,2,4,6,8,10,12]] /= w
     box[:, [1,3,5,7,9,11,13]] /= h
+    box_data = box
     return image_data, box_data
 
-class Generator(object):
+class Generator(keras.utils.Sequence):
     def __init__(self, txt_path, img_size, batch_size, bbox_util):
         self.img_size = img_size
         self.txt_path = txt_path
@@ -222,6 +233,13 @@ class Generator(object):
         self.imgs_path, self.words = self.process_labels()
         self.bbox_util = bbox_util
 
+    def __len__(self):
+        #计算每一个epoch的迭代次数
+        return math.ceil(len(self.imgs_path) / float(self.batch_size))
+
+    def get_len(self):
+        return len(self.imgs_path)
+        
     def process_labels(self):
         imgs_path = []
         words = []
@@ -248,18 +266,82 @@ class Generator(object):
         words.append(labels)
         return imgs_path, words
 
-    def get_len(self):
-        return len(self.imgs_path)
-    
-    def generate(self, eager=True):
+    def on_epoch_end(self):
+        shuffle_index = np.arange(len(self.imgs_path))
+        shuffle(shuffle_index)
+        self.imgs_path = np.array(self.imgs_path, dtype=np.object)[shuffle_index]
+        self.words = np.array(self.words, dtype=np.object)[shuffle_index]
+        
+    def __getitem__(self, index):
+        inputs = []
+        target0 = []
+        target1 = []
+        target2 = []
+        
+        for i in range(index*self.batch_size, (index+1)*self.batch_size):  
+            img = Image.open(self.imgs_path[i])
+            labels = self.words[i]
+            annotations = np.zeros((0, 15))
+            
+            for idx, label in enumerate(labels):
+                annotation = np.zeros((1, 15))
+                # bbox
+                annotation[0, 0] = label[0]  # x1
+                annotation[0, 1] = label[1]  # y1
+                annotation[0, 2] = label[0] + label[2]  # x2
+                annotation[0, 3] = label[1] + label[3]  # y2
+
+                # landmarks
+                annotation[0, 4] = label[4]    # l0_x
+                annotation[0, 5] = label[5]    # l0_y
+                annotation[0, 6] = label[7]    # l1_x
+                annotation[0, 7] = label[8]    # l1_y
+                annotation[0, 8] = label[10]   # l2_x
+                annotation[0, 9] = label[11]   # l2_y
+                annotation[0, 10] = label[13]  # l3_x
+                annotation[0, 11] = label[14]  # l3_y
+                annotation[0, 12] = label[16]  # l4_x
+                annotation[0, 13] = label[17]  # l4_y
+                if (annotation[0, 4]<0):
+                    annotation[0, 14] = -1
+                else:
+                    annotation[0, 14] = 1
+                annotations = np.append(annotations, annotation, axis=0)
+
+            target = np.array(annotations)
+            img, target = get_random_data(img, target, [self.img_size,self.img_size])
+
+            # 计算真实框对应的先验框，与这个先验框应当有的预测结果
+            assignment = self.bbox_util.assign_boxes(target)
+
+            regression = assignment[:,:5]
+            classification = assignment[:,5:8]
+
+            landms = assignment[:,8:]
+            
+            inputs.append(img)     
+            target0.append(np.reshape(regression,[-1,5]))
+            target1.append(np.reshape(classification,[-1,3]))
+            target2.append(np.reshape(landms,[-1,10+1]))
+            if len(target0) == self.batch_size:
+                tmp_inp = np.array(inputs)
+                tmp_targets = [np.array(target0,dtype=np.float32),np.array(target1,dtype=np.float32),np.array(target2,dtype=np.float32)]
+                
+                inputs = []
+                target0 = []
+                target1 = []
+                target2 = []
+                return preprocess_input(tmp_inp), tmp_targets
+
+    def generate(self):
         while True:
             #-----------------------------------#
             #   对训练集进行打乱
             #-----------------------------------#
             shuffle_index = np.arange(len(self.imgs_path))
             shuffle(shuffle_index)
-            self.imgs_path = np.array(self.imgs_path)[shuffle_index]
-            self.words = np.array(self.words)[shuffle_index]
+            self.imgs_path = np.array(self.imgs_path, dtype=np.object)[shuffle_index]
+            self.words = np.array(self.words, dtype=np.object)[shuffle_index]
 
             inputs = []
             target0 = []
@@ -320,10 +402,7 @@ class Generator(object):
                 if len(target0) == self.batch_size:
                     tmp_inp = np.array(inputs)
                     
-                    if eager:
-                        yield preprocess_input(tmp_inp), np.array(target0,dtype=np.float32),np.array(target1,dtype=np.float32),np.array(target2,dtype=np.float32)
-                    else:
-                        yield preprocess_input(tmp_inp), [np.array(target0,dtype=np.float32),np.array(target1,dtype=np.float32),np.array(target2,dtype=np.float32)]
+                    yield preprocess_input(tmp_inp), np.array(target0,dtype=np.float32),np.array(target1,dtype=np.float32),np.array(target2,dtype=np.float32)
                     inputs = []
                     target0 = []
                     target1 = []

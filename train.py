@@ -10,7 +10,7 @@ from nets.retinanet_training import (Generator, box_smooth_l1, conf_loss,
                                      ldm_smooth_l1)
 from utils.anchors import Anchors
 from utils.config import cfg_mnet, cfg_re50
-from utils.utils import BBoxUtility, ModelCheckpoint
+from utils.utils import BBoxUtility, ModelCheckpoint, ExponentDecayScheduler
 
 gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
 for gpu in gpus:
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     logging = TensorBoard(log_dir="logs")
     checkpoint = ModelCheckpoint('logs/ep{epoch:03d}-loss{loss:.3f}.h5',
         monitor='loss', save_weights_only=True, save_best_only=False, period=1)
-    reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.5, patience=2, verbose=1)
+    reduce_lr = ExponentDecayScheduler(decay_rate=0.92, verbose=1)
     early_stopping = EarlyStopping(monitor='loss', min_delta=0, patience=6, verbose=1)
 
     for i in range(freeze_layers): model.layers[i].trainable = False
@@ -90,7 +90,7 @@ if __name__ == "__main__":
                 },optimizer=keras.optimizers.Adam(lr=learning_rate_base)
         )
 
-        model.fit(gen.generate(False), 
+        model.fit(gen, 
                 steps_per_epoch=gen.get_len()//batch_size,
                 verbose=1,
                 epochs=Freeze_epoch,
@@ -114,7 +114,7 @@ if __name__ == "__main__":
                 },optimizer=keras.optimizers.Adam(lr=learning_rate_base)
         )
 
-        model.fit(gen.generate(False), 
+        model.fit(gen, 
                 steps_per_epoch=gen.get_len()//batch_size,
                 verbose=1,
                 epochs=Epoch,

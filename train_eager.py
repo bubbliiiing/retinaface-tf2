@@ -117,12 +117,12 @@ if __name__ == "__main__":
         epoch_size = gen.get_len()//batch_size
 
         if Use_Data_Loader:
-            gen = partial(gen.generate, eager=True)
+            gen = partial(gen.generate)
             gen = tf.data.Dataset.from_generator(gen, (tf.float32, tf.float32, tf.float32, tf.float32))
             gen = gen.shuffle(buffer_size=batch_size).prefetch(buffer_size=batch_size)
 
         else:
-            gen = gen.generate(eager=True)
+            gen = gen.generate()
         
         lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
             initial_learning_rate=learning_rate_base,
@@ -141,7 +141,7 @@ if __name__ == "__main__":
         model.layers[i].trainable = True
 
     if True:
-        batch_size = 4
+        batch_size = 8
         Freeze_epoch = 50
         Epoch = 100
         learning_rate_base = 1e-4
@@ -151,12 +151,12 @@ if __name__ == "__main__":
         epoch_size = gen.get_len()//batch_size
 
         if Use_Data_Loader:
-            gen = partial(gen.generate, eager=True)
+            gen = partial(gen.generate)
             gen = tf.data.Dataset.from_generator(gen, (tf.float32, tf.float32, tf.float32, tf.float32))
             gen = gen.shuffle(buffer_size=batch_size).prefetch(buffer_size=batch_size)
 
         else:
-            gen = gen.generate(eager=True)
+            gen = gen.generate()
         
         lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
             initial_learning_rate=learning_rate_base,
