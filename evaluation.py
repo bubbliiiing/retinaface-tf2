@@ -1,22 +1,15 @@
-import argparse
-import colorsys
 import os
-import pickle
 
 import cv2
 import numpy as np
 import tensorflow as tf
 import tqdm
-from PIL import Image, ImageDraw, ImageFont
 from scipy.io import loadmat
-from tensorflow.keras import backend as K
 from tensorflow.keras.applications.imagenet_utils import preprocess_input
-from tensorflow.keras.layers import Input
 
 from retinaface import Retinaface
 from utils.anchors import Anchors
-from utils.config import cfg_mnet, cfg_re50
-from utils.utils import BBoxUtility, letterbox_image, retinaface_correct_boxes
+from utils.utils import letterbox_image, retinaface_correct_boxes
 
 gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
 for gpu in gpus:

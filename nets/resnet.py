@@ -1,23 +1,12 @@
 #-------------------------------------------------------------#
 #   ResNet50的网络部分
 #-------------------------------------------------------------#
-from __future__ import print_function
-
-import numpy as np
-import tensorflow.keras.backend as K
 from tensorflow.keras import layers
-from tensorflow.keras.applications.imagenet_utils import (decode_predictions,
-                                                          preprocess_input)
-from tensorflow.keras.layers import (Activation, AveragePooling2D,
-                                     BatchNormalization, Conv2D, Dense,
-                                     Flatten, Input, MaxPooling2D,
-                                     ZeroPadding2D)
-from tensorflow.keras.models import Model
-from tensorflow.keras.preprocessing import image
+from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
+                                     MaxPooling2D, ZeroPadding2D)
 
 
 def identity_block(input_tensor, kernel_size, filters, stage, block):
-
     filters1, filters2, filters3 = filters
 
     conv_name_base = 'res' + str(stage) + block + '_branch'
@@ -38,9 +27,7 @@ def identity_block(input_tensor, kernel_size, filters, stage, block):
     x = Activation('relu')(x)
     return x
 
-
 def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
-
     filters1, filters2, filters3 = filters
 
     conv_name_base = 'res' + str(stage) + block + '_branch'

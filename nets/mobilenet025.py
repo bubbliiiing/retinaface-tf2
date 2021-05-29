@@ -1,12 +1,6 @@
-import warnings
-
-import numpy as np
 from tensorflow.keras import backend as K
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
-                                     DepthwiseConv2D, Dropout,
-                                     GlobalAveragePooling2D,
-                                     GlobalMaxPooling2D, Input, Reshape)
-from tensorflow.keras.models import Model
+                                     DepthwiseConv2D)
 
 
 #----------------------------------#

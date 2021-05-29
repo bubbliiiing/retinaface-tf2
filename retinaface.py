@@ -1,16 +1,10 @@
-import colorsys
 import os
-import pickle
 import time
 
 import cv2
 import numpy as np
 import tensorflow as tf
-import tensorflow.keras
-from PIL import Image, ImageDraw, ImageFont
-from tensorflow.keras import backend as K
 from tensorflow.keras.applications.imagenet_utils import preprocess_input
-from tensorflow.keras.layers import Input
 
 from nets.retinaface import RetinaFace
 from utils.anchors import Anchors
@@ -153,3 +147,46 @@ class Retinaface(object):
             cv2.circle(old_image, (b[11], b[12]), 1, (0, 255, 0), 4)
             cv2.circle(old_image, (b[13], b[14]), 1, (255, 0, 0), 4)
         return old_image
+        
+    def get_FPS(self, image, test_interval):
+        image = np.array(image, np.float32)
+        im_height, im_width, _ = np.shape(image)
+
+        scale = [np.shape(image)[1], np.shape(image)[0], np.shape(image)[1], np.shape(image)[0]]
+        scale_for_landmarks = [np.shape(image)[1], np.shape(image)[0], np.shape(image)[1], np.shape(image)[0],
+                                            np.shape(image)[1], np.shape(image)[0], np.shape(image)[1], np.shape(image)[0],
+                                            np.shape(image)[1], np.shape(image)[0]]
+        if self.letterbox_image:
+            image = letterbox_image(image, [self.input_shape[1], self.input_shape[0]])
+        else:
+            self.anchors = Anchors(self.cfg, image_size=(im_height, im_width)).get_anchors()
+            
+        photo = np.expand_dims(preprocess_input(image),0)
+        preds = self.get_pred(photo)
+        preds = [pred.numpy() for pred in preds]
+        results = self.bbox_util.detection_out(preds, self.anchors, confidence_threshold=self.confidence)
+
+        if len(results)>0:
+            results = np.array(results)
+            if self.letterbox_image:
+                results = retinaface_correct_boxes(results, np.array([self.input_shape[0], self.input_shape[1]]), np.array([im_height, im_width]))
+        
+            results[:,:4] = results[:,:4]*scale
+            results[:,5:] = results[:,5:]*scale_for_landmarks
+            
+        t1 = time.time()
+        for _ in range(test_interval):
+            preds = self.get_pred(photo)
+            preds = [pred.numpy() for pred in preds]
+            results = self.bbox_util.detection_out(preds, self.anchors, confidence_threshold=self.confidence)
+
+            if len(results)>0:
+                results = np.array(results)
+                if self.letterbox_image:
+                    results = retinaface_correct_boxes(results, np.array([self.input_shape[0], self.input_shape[1]]), np.array([im_height, im_width]))
+                
+                results[:,:4] = results[:,:4]*scale
+                results[:,5:] = results[:,5:]*scale_for_landmarks
+        t2 = time.time()
+        tact_time = (t2 - t1) / test_interval
+        return tact_time

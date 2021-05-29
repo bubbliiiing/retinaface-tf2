@@ -1,8 +1,6 @@
-import tensorflow.keras.backend as K
 from tensorflow.keras.layers import (Activation, Add, BatchNormalization,
                                      Concatenate, Conv2D, Input, LeakyReLU,
-                                     MaxPooling2D, Reshape, UpSampling2D,
-                                     ZeroPadding2D)
+                                     Reshape)
 from tensorflow.keras.models import Model
 from utils.utils import compose
 
