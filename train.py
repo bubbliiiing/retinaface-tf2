@@ -3,60 +3,26 @@ from functools import partial
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
-from tqdm import tqdm
 
 from nets.retinaface import RetinaFace
-from nets.retinaface_training import (ExponentDecayScheduler, Generator,
-                                      LossHistory, box_smooth_l1, conf_loss,
-                                      ldm_smooth_l1)
+from nets.retinaface_training import box_smooth_l1, conf_loss, ldm_smooth_l1
 from utils.anchors import Anchors
+from utils.callbacks import (ExponentDecayScheduler, LossHistory,
+                             ModelCheckpoint)
 from utils.config import cfg_mnet, cfg_re50
-from utils.utils import BBoxUtility, ModelCheckpoint
+from utils.dataloader import Generator
+from utils.utils import BBoxUtility
+from utils.utils_fit import fit_one_epoch
 
-
-# 防止bug
-def get_train_step_fn():
-    @tf.function
-    def train_step(imgs, targets1, targets2, targets3, net, optimizer):
-        with tf.GradientTape() as tape:
-            # 计算loss
-            prediction = net(imgs, training=True)
-            loss_value1 = box_smooth_l1(weights=cfg['loc_weight'])(targets1, prediction[0])
-            loss_value2 = conf_loss()(targets2, prediction[1])
-            loss_value3 = ldm_smooth_l1()(targets3, prediction[2])
-            loss_value = loss_value1 + loss_value2 + loss_value3
-        grads = tape.gradient(loss_value, net.trainable_variables)
-        optimizer.apply_gradients(zip(grads, net.trainable_variables))
-        return loss_value
-    return train_step
-
-def fit_one_epoch(net, optimizer, epoch, epoch_size, gen, Epoch, train_step):
-    total_loss = 0
-    with tqdm(total=epoch_size,desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3) as pbar:
-        for iteration, batch in enumerate(gen):
-            if iteration>=epoch_size:
-                break
-            images, targets1, targets2, targets3 = batch[0], tf.convert_to_tensor(batch[1]),  tf.convert_to_tensor(batch[2]), tf.convert_to_tensor(batch[3])
-            loss_value = train_step(images, targets1, targets2, targets3, net, optimizer)
-            total_loss += loss_value
-
-            pbar.set_postfix(**{'total_loss': total_loss.numpy()/(iteration+1), 
-                                'lr'        : optimizer._decayed_lr(tf.float32).numpy()})
-            pbar.update(1)
-
-    logs = {'loss': total_loss.numpy()/(epoch_size+1)}
-    loss_history.on_epoch_end([], logs)
-    print('Finish Validation')
-    print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
-    print('Total Loss: %.4f' % (total_loss/(epoch_size+1)))
-    net.save_weights('logs/Epoch%d-Total_Loss%.4f.h5'%((epoch+1),total_loss/(epoch_size+1)))
-    
 gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
     
 if __name__ == "__main__":
-    eager = False
+    #----------------------------------------------------#
+    #   是否使用eager模式训练
+    #----------------------------------------------------#
+    eager  = False
     #--------------------------------#
     #   获得训练用的人脸标签与坐标
     #--------------------------------#
@@ -65,7 +31,13 @@ if __name__ == "__main__":
     #   主干特征提取网络的选择
     #   mobilenet或者resnet50
     #-------------------------------#
-    backbone = "mobilenet"  
+    backbone    = "mobilenet"  
+    #-------------------------------------------------------------------#
+    #   用于设置是否使用多线程读取数据，0代表关闭多线程
+    #   开启后会加快数据读取速度，但是会占用更多内存
+    #   在IO为瓶颈的时候再开启多线程，即GPU运算速度远大于读取图片的速度。
+    #-------------------------------------------------------------------#
+    num_workers = 0
 
     if backbone == "mobilenet":
         cfg = cfg_mnet
@@ -76,20 +48,32 @@ if __name__ == "__main__":
     else:
         raise ValueError('Unsupported backbone - `{}`, Use mobilenet, resnet50.'.format(backbone))
 
-    img_dim = cfg['train_image_size']
-    #--------------------------------------#
-    #   载入模型与权值
-    #   请注意主干网络与预训练权重的对应
-    #--------------------------------------#
-    model = RetinaFace(cfg, backbone=backbone)
-    model_path = "model_data/retinaface_mobilenet025.h5"
+    #----------------------------------------------------------------------------------------------------------------------------#
+    #   权值文件的下载请看README，可以通过网盘下载。模型的 预训练权重 对不同数据集是通用的，因为特征是通用的。
+    #   模型的 预训练权重 比较重要的部分是 主干特征提取网络的权值部分，用于进行特征提取。
+    #   预训练权重对于99%的情况都必须要用，不用的话主干部分的权值太过随机，特征提取效果不明显，网络训练的结果也不会好
+    #
+    #   如果训练过程中存在中断训练的操作，可以将model_path设置成logs文件夹下的权值文件，将已经训练了一部分的权值再次载入。
+    #   同时修改下方的训练参数，来保证模型epoch的连续性。
+    #   
+    #   当model_path = ''的时候不加载整个模型的权值。
+    #
+    #   如果想要让模型从主干的预训练权值开始训练，则设置model_path为主干网络的权值，此时仅加载主干。
+    #   如果想要让模型从0开始训练，则设置model_path = ''，此时从0开始训练。
+    #   一般来讲，从0开始训练效果会很差，因为权值太过随机，特征提取效果不明显。
+    #
+    #   网络一般不从0开始训练，至少会使用主干部分的权值，有些论文提到可以不用预训练，主要原因是他们 数据集较大 且 调参能力优秀。
+    #   如果一定要训练网络的主干部分，可以了解imagenet数据集，首先训练分类模型，分类模型的 主干部分 和该模型通用，基于此进行训练。
+    #----------------------------------------------------------------------------------------------------------------------------#
+    model_path  = "model_data/retinaface_mobilenet025.h5"
+    model       = RetinaFace(cfg, backbone=backbone)
     model.load_weights(model_path,by_name=True,skip_mismatch=True)
 
     #-------------------------------#
     #   获得先验框和工具箱
     #-------------------------------#
-    anchors = Anchors(cfg, image_size=(img_dim, img_dim)).get_anchors()
-    bbox_util = BBoxUtility(anchors)
+    anchors     = Anchors(cfg, image_size=(cfg['train_image_size'], cfg['train_image_size'])).get_anchors()
+    bbox_util   = BBoxUtility(anchors)
 
     #-------------------------------------------------------------------------------#
     #   训练参数的设置
@@ -98,12 +82,11 @@ if __name__ == "__main__":
     #   reduce_lr用于设置学习率下降的方式
     #   early_stopping用于设定早停，val_loss多次不下降自动结束训练，表示模型基本收敛
     #-------------------------------------------------------------------------------#
-    logging = TensorBoard(log_dir="logs/")
-    checkpoint = ModelCheckpoint('logs/ep{epoch:03d}-loss{loss:.3f}.h5',
-        monitor='loss', save_weights_only=True, save_best_only=False, period=1)
-    reduce_lr = ExponentDecayScheduler(decay_rate=0.92, verbose=1)
-    early_stopping = EarlyStopping(monitor='loss', min_delta=0, patience=6, verbose=1)
-    loss_history = LossHistory("logs/")
+    logging         = TensorBoard(log_dir="logs/")
+    checkpoint      = ModelCheckpoint('logs/ep{epoch:03d}-loss{loss:.3f}.h5', monitor='loss', save_weights_only=True, save_best_only=False, period=1)
+    reduce_lr       = ExponentDecayScheduler(decay_rate=0.92, verbose=1)
+    early_stopping  = EarlyStopping(monitor='loss', min_delta=0, patience=10, verbose=1)
+    loss_history    = LossHistory("logs/")
 
     for i in range(freeze_layers): model.layers[i].trainable = False
     print('Freeze the first {} layers of total {} layers.'.format(freeze_layers, len(model.layers)))
@@ -122,21 +105,21 @@ if __name__ == "__main__":
         Freeze_epoch        = 50
         learning_rate_base  = 1e-3
 
-        gen                 = Generator(training_dataset_path,img_dim,batch_size,bbox_util)
+        gen                 = Generator(training_dataset_path,cfg['train_image_size'],batch_size,bbox_util)
         epoch_size          = gen.get_len() // batch_size
+
         print('Train on {} samples, with batch size {}.'.format(epoch_size, batch_size))
         if eager:
             gen         = tf.data.Dataset.from_generator(partial(gen.generate), (tf.float32, tf.float32, tf.float32, tf.float32))
             gen         = gen.shuffle(buffer_size=batch_size).prefetch(buffer_size=batch_size)
 
             lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-                initial_learning_rate=learning_rate_base, decay_steps=epoch_size, decay_rate=0.95, staircase=True
-            )
+                initial_learning_rate=learning_rate_base, decay_steps=epoch_size, decay_rate=0.92, staircase=True)
 
             optimizer   = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
 
             for epoch in range(Init_epoch,Freeze_epoch):
-                fit_one_epoch(model, optimizer, epoch, epoch_size, gen, Freeze_epoch, get_train_step_fn())
+                fit_one_epoch(model, loss_history, optimizer, epoch, epoch_size, gen, Freeze_epoch, cfg)
         else:
             model.compile(loss={
                         'bbox_reg'  : box_smooth_l1(weights=cfg['loc_weight']),
@@ -145,15 +128,16 @@ if __name__ == "__main__":
                     },optimizer=keras.optimizers.Adam(lr=learning_rate_base)
             )
 
-            model.fit(gen, 
-                    steps_per_epoch=epoch_size,
-                    verbose=1,
-                    epochs=Freeze_epoch,
-                    initial_epoch=Init_epoch,
-                    # 开启多线程可以加快数据读取的速度。
-                    # workers=4,
-                    # use_multiprocessing=True,
-                    callbacks=[logging, checkpoint, reduce_lr, early_stopping, loss_history])
+            model.fit_generator(
+                generator           = gen, 
+                steps_per_epoch     = gen.get_len() // batch_size,
+                epochs              = Freeze_epoch,
+                initial_epoch       = Init_epoch,
+                use_multiprocessing = True if num_workers != 0 else False,
+                workers             = num_workers,
+                callbacks           = [logging, checkpoint, reduce_lr, early_stopping, loss_history]
+            )
+
 
     for i in range(freeze_layers): model.layers[i].trainable = True
 
@@ -163,21 +147,21 @@ if __name__ == "__main__":
         Epoch               = 100
         learning_rate_base  = 1e-4
 
-        gen                 = Generator(training_dataset_path,img_dim,batch_size,bbox_util)
+        gen                 = Generator(training_dataset_path,cfg['train_image_size'],batch_size,bbox_util)
         epoch_size          = gen.get_len() // batch_size
+
         print('Train on {} samples, with batch size {}.'.format(epoch_size, batch_size))
         if eager:
             gen         = tf.data.Dataset.from_generator(partial(gen.generate), (tf.float32, tf.float32, tf.float32, tf.float32))
             gen         = gen.shuffle(buffer_size=batch_size).prefetch(buffer_size=batch_size)
 
             lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-                initial_learning_rate=learning_rate_base, decay_steps=epoch_size, decay_rate=0.95, staircase=True
-            )
+                initial_learning_rate=learning_rate_base, decay_steps=epoch_size, decay_rate=0.92, staircase=True)
 
             optimizer   = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
 
             for epoch in range(Freeze_epoch,Epoch):
-                fit_one_epoch(model, optimizer, epoch, epoch_size, gen, Epoch, get_train_step_fn())
+                fit_one_epoch(model, loss_history, optimizer, epoch, epoch_size, gen, Epoch, cfg)
         else:
             model.compile(loss={
                         'bbox_reg'  : box_smooth_l1(weights=cfg['loc_weight']),
@@ -186,12 +170,12 @@ if __name__ == "__main__":
                     },optimizer=keras.optimizers.Adam(lr=learning_rate_base)
             )
 
-            model.fit(gen, 
-                    steps_per_epoch=epoch_size,
-                    verbose=1,
-                    epochs=Epoch,
-                    initial_epoch=Freeze_epoch,
-                    # 开启多线程可以加快数据读取的速度。
-                    # workers=4,
-                    # use_multiprocessing=True,
-                    callbacks=[logging, checkpoint, reduce_lr, early_stopping, loss_history])
+            model.fit_generator(
+                generator           = gen, 
+                steps_per_epoch     = gen.get_len()//batch_size,
+                epochs              = Epoch,
+                initial_epoch       = Freeze_epoch,
+                use_multiprocessing = True if num_workers != 0 else False,
+                workers             = num_workers,
+                callbacks           = [logging, checkpoint, reduce_lr, early_stopping, loss_history]
+            )

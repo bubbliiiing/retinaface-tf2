@@ -1,13 +1,27 @@
+import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras.layers import (Activation, Add, BatchNormalization,
                                      Concatenate, Conv2D, Input, LeakyReLU,
                                      Reshape)
 from tensorflow.keras.models import Model
 from utils.utils import compose
 
-from nets.layers import UpsampleLike
-from nets.mobilenet025 import MobileNet
+from nets.mobilenet import MobileNet
 from nets.resnet import ResNet50
 
+
+class UpsampleLike(keras.layers.Layer):
+    def call(self, inputs, **kwargs):
+        source, target = inputs
+        target_shape = keras.backend.shape(target)
+        return tf.compat.v1.image.resize_images(source, (target_shape[1], target_shape[2]), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR, align_corners=False)
+
+
+    def compute_output_shape(self, input_shape):
+        if keras.backend.image_data_format() == 'channels_first':
+            return (input_shape[0][0], input_shape[0][1]) + input_shape[1][2:4]
+        else:
+            return (input_shape[0][0],) + input_shape[1][1:3] + (input_shape[0][-1],)
 
 #---------------------------------------------------#
 #   卷积块
