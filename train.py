@@ -147,7 +147,7 @@ if __name__ == "__main__":
 
             model.fit_generator(
                 generator           = gen, 
-                steps_per_epoch     = gen.get_len() // batch_size,
+                steps_per_epoch     = epoch_size,
                 epochs              = Freeze_epoch,
                 initial_epoch       = Init_epoch,
                 use_multiprocessing = True if num_workers > 1 else False,
@@ -194,7 +194,7 @@ if __name__ == "__main__":
 
             model.fit_generator(
                 generator           = gen, 
-                steps_per_epoch     = gen.get_len()//batch_size,
+                steps_per_epoch     = epoch_size,
                 epochs              = Epoch,
                 initial_epoch       = Freeze_epoch,
                 use_multiprocessing = True if num_workers > 1 else False,
