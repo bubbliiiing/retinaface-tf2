@@ -9,7 +9,8 @@ from tensorflow.keras.applications.imagenet_utils import preprocess_input
 from nets.retinaface import RetinaFace
 from utils.anchors import Anchors
 from utils.config import cfg_mnet, cfg_re50
-from utils.utils import BBoxUtility, letterbox_image, retinaface_correct_boxes
+from utils.utils import letterbox_image
+from utils.utils_bbox import BBoxUtility, retinaface_correct_boxes
 
 
 #------------------------------------#

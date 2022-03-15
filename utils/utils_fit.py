@@ -8,17 +8,19 @@ def get_train_step_fn():
     @tf.function
     def train_step(imgs, targets1, targets2, targets3, net, optimizer, cfg):
         with tf.GradientTape() as tape:
-            prediction = net(imgs, training=True)
+            prediction  = net(imgs, training=True)
+            
             loss_value1 = box_smooth_l1(weights = cfg['loc_weight'])(targets1, prediction[0])
             loss_value2 = conf_loss()(targets2, prediction[1])
             loss_value3 = ldm_smooth_l1()(targets3, prediction[2])
+            
             loss_value  = loss_value1 + loss_value2 + loss_value3
         grads = tape.gradient(loss_value, net.trainable_variables)
         optimizer.apply_gradients(zip(grads, net.trainable_variables))
         return loss_value
     return train_step
 
-def fit_one_epoch(net, loss_history, optimizer, epoch, epoch_step, gen, Epoch, cfg):
+def fit_one_epoch(net, loss_history, optimizer, epoch, epoch_step, gen, Epoch, cfg, save_period):
     train_step  = get_train_step_fn()
 
     total_loss = 0
@@ -28,6 +30,7 @@ def fit_one_epoch(net, loss_history, optimizer, epoch, epoch_step, gen, Epoch, c
             if iteration>=epoch_step:
                 break
             images, targets1, targets2, targets3 = batch[0], tf.convert_to_tensor(batch[1]),  tf.convert_to_tensor(batch[2]), tf.convert_to_tensor(batch[3])
+            
             loss_value = train_step(images, targets1, targets2, targets3, net, optimizer, cfg)
             total_loss += loss_value
 
@@ -35,8 +38,9 @@ def fit_one_epoch(net, loss_history, optimizer, epoch, epoch_step, gen, Epoch, c
                                 'lr'        : optimizer._decayed_lr(tf.float32).numpy()})
             pbar.update(1)
 
-    logs = {'loss': total_loss.numpy() / (epoch_step+1)}
+    logs = {'loss': total_loss.numpy() / epoch_step}
     loss_history.on_epoch_end([], logs)
     print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
     print('Total Loss: %.3f' % (total_loss / epoch_step))
-    net.save_weights('logs/ep%03d-loss%.3f.h5' % (epoch + 1, total_loss / epoch_step))
+    if (epoch + 1) % save_period == 0 or epoch + 1 == Epoch:
+        net.save_weights('logs/ep%03d-loss%.3f.h5' % (epoch + 1, total_loss / epoch_step))
