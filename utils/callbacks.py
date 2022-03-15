@@ -1,9 +1,11 @@
 import os
 import warnings
 
-import matplotlib.pyplot as plt
-import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
 import scipy.signal
+import numpy as np
 from tensorflow import keras
 from tensorflow.keras import backend as K
 
