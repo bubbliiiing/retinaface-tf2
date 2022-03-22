@@ -1,3 +1,5 @@
+import os
+
 import tensorflow as tf
 from nets.retinaface_training import box_smooth_l1, conf_loss, ldm_smooth_l1
 from tqdm import tqdm
@@ -20,7 +22,7 @@ def get_train_step_fn():
         return loss_value
     return train_step
 
-def fit_one_epoch(net, loss_history, optimizer, epoch, epoch_step, gen, Epoch, cfg, save_period):
+def fit_one_epoch(net, loss_history, optimizer, epoch, epoch_step, gen, Epoch, cfg, save_period, save_dir):
     train_step  = get_train_step_fn()
 
     total_loss = 0
@@ -43,4 +45,4 @@ def fit_one_epoch(net, loss_history, optimizer, epoch, epoch_step, gen, Epoch, c
     print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
     print('Total Loss: %.3f' % (total_loss / epoch_step))
     if (epoch + 1) % save_period == 0 or epoch + 1 == Epoch:
-        net.save_weights('logs/ep%03d-loss%.3f.h5' % (epoch + 1, total_loss / epoch_step))
+        net.save_weights(os.path.join(save_dir, 'ep%03d-loss%.3f.h5' % (epoch + 1, total_loss / epoch_step)))
